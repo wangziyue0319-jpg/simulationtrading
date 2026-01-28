@@ -141,7 +141,7 @@ export function PositionList() {
                       <p className="font-medium">{position.shares.toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-600 mb-1">持仓成本</p>
+                      <p className="text-gray-600 mb-1">持仓均价</p>
                       <p className="font-medium">¥{position.avgCost.toFixed(3)}</p>
                     </div>
                     <div>
@@ -196,6 +196,17 @@ export function PositionList() {
                         {tx.type === "buy" ? "买入" : "卖出"}
                       </span>
                       <span className="font-medium text-sm">{tx.fundName}</span>
+                      {tx.type === "sell" && tx.sellType && (
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs ${
+                            tx.sellType === "full"
+                              ? "bg-macaron-pink/30 text-macaron-pink"
+                              : "bg-macaron-blue/30 text-macaron-blue"
+                          }`}
+                        >
+                          {tx.sellType === "full" ? "清仓" : "部分"}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
                       {tx.shares.toFixed(2)}份 × ¥{tx.price.toFixed(3)}

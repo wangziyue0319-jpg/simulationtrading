@@ -6,7 +6,8 @@ export interface Position {
   fundName: string;
   fundType: "stock" | "bond" | "mix" | "money" | "index";
   shares: number;
-  avgCost: number;
+  totalCost: number; // 总成本
+  avgCost: number; // 持仓均价 = totalCost / shares
   currentPrice: number;
   profitLoss: number;
   profitLossPercent: number;
@@ -19,6 +20,7 @@ export interface Transaction {
   fundName: string;
   fundType: string;
   type: "buy" | "sell";
+  sellType?: "partial" | "full"; // 部分卖出 或 清仓
   shares: number;
   price: number;
   totalAmount: number;
@@ -52,7 +54,7 @@ interface SimulationStore {
 
   // Actions
   buyFund: (fundCode: string, shares: number) => void;
-  sellFund: (fundCode: string, shares: number) => void;
+  sellFund: (fundCode: string, shares: number) => { success: boolean; message?: string };
   updatePrices: () => void;
   resetAccount: () => void;
 }
@@ -88,37 +90,44 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     );
 
     let newPositions: Position[];
-    let newAvgCost = fund.price;
+    let newTotalCost: number;
+    let newAvgCost: number;
 
     if (existingPosition) {
-      // Update existing position
+      // 使用加权平均法更新持仓成本
+      // 新总成本 = 旧总成本 + 新购入价格 × 数量
+      newTotalCost = existingPosition.totalCost + (fund.price * shares);
       const totalShares = existingPosition.shares + shares;
-      newAvgCost =
-        (existingPosition.avgCost * existingPosition.shares +
-          fund.price * shares) / totalShares;
+      newAvgCost = newTotalCost / totalShares;
 
       newPositions = account.positions.map((p) =>
         p.fundCode === fundCode
           ? {
               ...p,
               shares: totalShares,
+              totalCost: newTotalCost,
               avgCost: newAvgCost,
+              currentPrice: fund.price,
               marketValue: totalShares * fund.price,
-              profitLoss: totalShares * fund.price - newAvgCost * totalShares,
+              profitLoss: totalShares * fund.price - newTotalCost,
               profitLossPercent:
                 ((fund.price - newAvgCost) / newAvgCost) * 100,
             }
           : p
       );
     } else {
-      // Create new position
+      // 新建持仓，总成本 = 购入价格 × 数量
+      newTotalCost = fund.price * shares;
+      newAvgCost = fund.price;
+
       const newPosition: Position = {
         id: Date.now().toString(),
         fundCode: fund.code,
         fundName: fund.name,
         fundType: fund.type,
         shares,
-        avgCost: fund.price,
+        totalCost: newTotalCost,
+        avgCost: newAvgCost,
         currentPrice: fund.price,
         marketValue: shares * fund.price,
         profitLoss: 0,
@@ -164,47 +173,61 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     const { account } = get();
     const position = account.positions.find((p) => p.fundCode === fundCode);
 
+    // 校验：卖出份额不能超过持仓份额
     if (!position) {
-      alert("未找到该持仓！");
-      return;
+      return { success: false, message: "未找到该持仓" };
+    }
+
+    if (shares <= 0) {
+      return { success: false, message: "卖出份额必须大于0" };
     }
 
     if (shares > position.shares) {
-      alert("卖出份额超过持仓份额！");
-      return;
+      return {
+        success: false,
+        message: `卖出份额超过持仓份额！你最多可卖出 ${position.shares.toFixed(2)} 份`,
+      };
     }
 
     const fund = mockFunds.find((f) => f.code === fundCode)!;
     const totalAmount = shares * fund.price;
+    const isFullSell = shares === position.shares;
+    const sellRatio = shares / position.shares;
 
     let newPositions: Position[];
-    if (shares === position.shares) {
-      // Remove position entirely
+    if (isFullSell) {
+      // 清仓：移除整个持仓
       newPositions = account.positions.filter((p) => p.fundCode !== fundCode);
     } else {
-      // Update position
+      // 部分卖出：按比例扣除 totalCost
+      const newTotalCost = position.totalCost * (1 - sellRatio);
+      const newShares = position.shares - shares;
+
       newPositions = account.positions.map((p) =>
         p.fundCode === fundCode
           ? {
               ...p,
-              shares: p.shares - shares,
-              marketValue: (p.shares - shares) * fund.price,
-              profitLoss:
-                (p.shares - shares) * fund.price - p.avgCost * (p.shares - shares),
+              shares: newShares,
+              totalCost: newTotalCost,
+              avgCost: newTotalCost / newShares,
+              currentPrice: fund.price,
+              marketValue: newShares * fund.price,
+              profitLoss: newShares * fund.price - newTotalCost,
               profitLossPercent:
-                ((fund.price - p.avgCost) / p.avgCost) * 100,
+                ((fund.price - (newTotalCost / newShares)) / (newTotalCost / newShares)) * 100,
             }
           : p
       );
     }
 
-    // Create transaction
+    // Create transaction with sellType
     const newTransaction: Transaction = {
       id: Date.now().toString(),
       fundCode: fund.code,
       fundName: fund.name,
       fundType: fund.type,
       type: "sell",
+      sellType: isFullSell ? "full" : "partial",
       shares,
       price: fund.price,
       totalAmount,
@@ -229,6 +252,11 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         transactions: [newTransaction, ...account.transactions],
       },
     });
+
+    return {
+      success: true,
+      message: isFullSell ? "清仓成功！" : "卖出成功！",
+    };
   },
 
   updatePrices: () => {
@@ -244,7 +272,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         ...position,
         currentPrice: newPrice,
         marketValue,
-        profitLoss: marketValue - position.avgCost * position.shares,
+        profitLoss: marketValue - position.totalCost,
         profitLossPercent:
           ((newPrice - position.avgCost) / position.avgCost) * 100,
       };
