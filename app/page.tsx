@@ -19,6 +19,8 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FundSearch } from "@/components/FundSearch";
+import { FundSearchResult } from "@/lib/fundApi";
 
 // 基金类型定义
 const fundTypes = [
@@ -328,6 +330,22 @@ export default function SimulationPage() {
             🎮 模拟交易
           </h1>
           <p className="text-gray-600">0成本练理财，全程免费无风险</p>
+        </div>
+
+        {/* 基金搜索栏 */}
+        <div className="mb-6">
+          <FundSearch
+            onSelect={(fund: FundSearchResult) => {
+              // 当用户选择基金后，自动填充到买入区域
+              setSelectedFund(fund.type);
+              // 可以添加更多处理逻辑，如显示基金详情等
+              alert(`已选择：${fund.name} (${fund.code})`);
+            }}
+            placeholder="🔍 搜索任意基金（输入代码或名称）..."
+          />
+          <p className="text-xs text-gray-500 mt-2 text-center">
+            💡 支持搜索全市场基金，数据来源：天天基金网
+          </p>
         </div>
 
         {/* 资金卡片 */}

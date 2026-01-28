@@ -12,42 +12,42 @@ import { SellDialog } from "@/components/SellDialog";
 export function TradePanel() {
   const { availableFunds, buyFund, sellFund, account } = useSimulationStore();
   const [selectedFundCode, setSelectedFundCode] = useState<string | null>(null);
-  const [shares, setShares] = useState("");
-  const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
+  const [buyShares, setBuyShares] = useState("");
   const [sellDialogOpen, setSellDialogOpen] = useState(false);
-  const [selectedSellPosition, setSelectedSellPosition] = useState<string | null>(null);
+  const [selectedSellPosition, setSelectedSellPosition] = useState<ReturnType<typeof account.positions.find> | null>(null);
 
   const selectedFund = availableFunds.find((f) => f.code === selectedFundCode);
+  const selectedPosition = selectedFundCode
+    ? account.positions.find((p) => p.fundCode === selectedFundCode)
+    : null;
 
-  const handleTrade = () => {
-    if (!selectedFundCode || !shares) return;
+  const handleBuy = () => {
+    if (!selectedFundCode || !buyShares) return;
 
-    const sharesNum = parseFloat(shares);
+    const sharesNum = parseFloat(buyShares);
     if (isNaN(sharesNum) || sharesNum <= 0) {
       alert("请输入有效的份额");
       return;
     }
 
-    if (tradeType === "buy") {
-      buyFund(selectedFundCode, sharesNum);
-      setShares("");
-    } else {
-      // 打开卖出对话框
-      const position = account.positions.find((p) => p.fundCode === selectedFundCode);
-      if (position) {
-        setSelectedSellPosition(selectedFundCode);
-        setSellDialogOpen(true);
-      }
+    buyFund(selectedFundCode, sharesNum);
+    setBuyShares("");
+  };
+
+  const handleSellClick = () => {
+    if (selectedPosition) {
+      setSelectedSellPosition(selectedPosition);
+      setSellDialogOpen(true);
     }
   };
 
   const handleSellConfirm = (sellShares: number) => {
-    if (!selectedSellPosition) return { success: false, message: "未选择基金" };
+    if (!selectedFundCode) return { success: false, message: "未选择基金" };
 
-    const result = sellFund(selectedSellPosition, sellShares);
+    const result = sellFund(selectedFundCode, sellShares);
     if (result.success) {
-      setShares("");
       setSelectedFundCode(null);
+      setSellDialogOpen(false);
     }
     return result;
   };
@@ -73,11 +73,6 @@ export function TradePanel() {
     };
     return names[type as keyof typeof names] || type;
   };
-
-  // 获取当前选中基金的持仓信息
-  const selectedPosition = selectedFundCode
-    ? account.positions.find((p) => p.fundCode === selectedFundCode)
-    : null;
 
   return (
     <>
@@ -111,7 +106,10 @@ export function TradePanel() {
                 return (
                   <button
                     key={fund.code}
-                    onClick={() => setSelectedFundCode(fund.code)}
+                    onClick={() => {
+                      setSelectedFundCode(fund.code);
+                      setBuyShares("");
+                    }}
                     className={`p-3 rounded-card border-2 transition-all text-left ${
                       selectedFundCode === fund.code
                         ? "border-macaron-pink bg-macaron-pink/10"
@@ -145,101 +143,79 @@ export function TradePanel() {
             </div>
           </div>
 
-          {/* Trade Type Selector */}
+          {/* 买入/卖出操作区 */}
           {selectedFund && (
-            <>
-              <div className="flex gap-2">
-                <Button
-                  variant={tradeType === "buy" ? "default" : "outline"}
-                  onClick={() => setTradeType("buy")}
-                  className="flex-1 gap-2"
-                >
-                  <TrendingUp className="w-4 h-4" />
-                  买入
-                </Button>
-                <Button
-                  variant={tradeType === "sell" ? "default" : "outline"}
-                  onClick={() => setTradeType("sell")}
-                  className="flex-1 gap-2"
-                  disabled={!selectedPosition}
-                >
-                  <TrendingDown className="w-4 h-4" />
-                  卖出
-                </Button>
-              </div>
-
-              {/* 买入操作 */}
-              {tradeType === "buy" && (
+            <div className="space-y-4">
+              {/* 如果有持仓，显示卖出按钮 */}
+              {selectedPosition ? (
+                <div className="space-y-3">
+                  <div className="bg-macaron-cream rounded-card p-4">
+                    <p className="text-sm font-medium text-gray-700 mb-2">当前持仓信息</p>
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <p className="text-gray-500">持有份额</p>
+                        <p className="font-medium">{selectedPosition.shares.toFixed(2)} 份</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">持仓成本</p>
+                        <p className="font-medium">¥{selectedPosition.avgCost.toFixed(3)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">当前市值</p>
+                        <p className="font-medium text-macaron-pink">
+                          {formatCurrency(selectedPosition.marketValue)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleSellClick}
+                    className="w-full bg-gradient-to-r from-macaron-blue to-macaron-green hover:from-macaron-blue/90 hover:to-macaron-green/90 text-white font-medium shadow-lg"
+                    size="lg"
+                  >
+                    <TrendingDown className="w-5 h-5 mr-2" />
+                    卖出（选择份额）
+                  </Button>
+                </div>
+              ) : (
+                /* 没有持仓，显示买入输入框 */
                 <div className="space-y-2">
                   <label className="text-sm font-medium">买入份额</label>
                   <Input
                     type="number"
-                    value={shares}
-                    onChange={(e) => setShares(e.target.value)}
+                    value={buyShares}
+                    onChange={(e) => setBuyShares(e.target.value)}
                     placeholder="输入份额"
                     min="0"
                     step="100"
                   />
-                  {selectedFund && shares && (
+                  {buyShares && (
                     <p className="text-sm text-gray-600">
                       预计金额:{" "}
                       <span className="font-bold text-macaron-pink">
-                        {formatCurrency(parseFloat(shares || "0") * selectedFund.price)}
+                        {formatCurrency(parseFloat(buyShares || "0") * selectedFund.price)}
                       </span>
                     </p>
                   )}
                   <Button
-                    onClick={handleTrade}
-                    disabled={!shares}
-                    className="w-full"
+                    onClick={handleBuy}
+                    disabled={!buyShares}
+                    className="w-full bg-gradient-to-r from-macaron-pink to-macaron-purple hover:from-macaron-pink/90 hover:to-macaron-purple/90 text-white font-medium shadow-lg"
                     size="lg"
                   >
+                    <TrendingUp className="w-5 h-5 mr-2" />
                     确认买入
                   </Button>
                 </div>
               )}
-
-              {/* 卖出操作 - 直接打开对话框 */}
-              {tradeType === "sell" && selectedPosition && (
-                <div className="space-y-3">
-                  <div className="bg-macaron-cream rounded-card p-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">当前持仓</span>
-                      <span className="font-medium text-gray-800">
-                        {selectedPosition.shares.toFixed(2)} 份
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">持仓成本</span>
-                      <span className="font-medium text-gray-800">
-                        ¥{selectedPosition.avgCost.toFixed(3)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">当前市值</span>
-                      <span className="font-medium text-macaron-pink">
-                        {formatCurrency(selectedPosition.marketValue)}
-                      </span>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => setSellDialogOpen(true)}
-                    className="w-full"
-                    size="lg"
-                  >
-                    <TrendingDown className="w-4 h-4 mr-2" />
-                    打开卖出面板
-                  </Button>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </CardContent>
       </Card>
 
       {/* 卖出对话框 */}
       <SellDialog
-        position={selectedPosition}
+        position={selectedSellPosition}
         isOpen={sellDialogOpen}
         onClose={() => setSellDialogOpen(false)}
         onConfirm={handleSellConfirm}
